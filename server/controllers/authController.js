@@ -9,7 +9,9 @@ const {
 } = require('../utils');
 const crypto = require('crypto');
 //const sendEmail = require('../utils/sendEmail');
-const sendEmailSendGrid = require('../utils/sendEmailSendGrid');
+const sendEmailSendGrid = require('../utils');
+const sendResetPasswordEmail = require('../utils/sendResetPasswordEmail');
+const createHash = require('../utils/createHash');
 
 const register = async (req, res) => {
   const { email, name, password } = req.body;
@@ -106,9 +108,14 @@ const login = async (req, res) => {
   res.status(StatusCodes.OK).json({ msg: 'token verified', user: tokenUser });
 };
 const logout = async (req, res) => {
-  res.cookie('token', 'logout', {
+  await Token.findOneAndDelete({ user: req.user.userId });
+  res.cookie('accessToken', 'logout', {
     httpOnly: true,
-    expires: new Date(Date.now() + 1000),
+    expires: new Date(Date.now()),
+  });
+  res.cookie('refreshToken', 'logout', {
+    httpOnly: true,
+    expires: new Date(Date.now()),
   });
   res.status(StatusCodes.OK).json({ msg: 'user logged out!' });
 };
@@ -130,9 +137,57 @@ const verifyEmail = async (req, res) => {
   res.status(StatusCodes.OK).json({ msg: 'token verified', user: user });
 };
 
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    throw new CustomError.UnauthenticatedError('Please enter valid email');
+  }
+  const user = await User.findOne({ email });
+  if (user) {
+    const passwordToken = crypto.randomBytes(40).toString('hex');
+    //send email
+    const origin = 'http://localhost:3000';
+    await sendResetPasswordEmail(user.name, user.email, passwordToken, origin);
+    const tenMinutes = 1000 * 60 * 10;
+    const passwordTokenExpirationDate = new Date(Date.now() + tenMinutes);
+
+    user.passwordToken = createHash(passwordToken);
+    user.passwordTokenExpirationDate = passwordTokenExpirationDate;
+
+    await user.save();
+  }
+  res
+    .status(StatusCodes.OK)
+    .json({ msg: 'Please Check your email to reset the password' });
+};
+
+const resetPassword = async (req, res) => {
+  const { token, email, password } = req.body;
+  if (!token || !email || !password) {
+    throw new CustomError.UnauthenticatedError('Please provide all values');
+  }
+  const user = await User.findOne({ email });
+  if (user) {
+    const currentDate = new Date();
+    if (
+      user.passwordToken === createHash(token) &&
+      user.passwordTokenExpirationDate > currentDate
+    ) {
+      user.password = password;
+      user.passwordToken = null;
+      user.passwordTokenExpirationDate = null;
+      await user.save();
+    }
+  }
+
+  res.status(StatusCodes.OK).json({ msg: 'Reset Password' });
+};
+
 module.exports = {
   register,
   login,
   logout,
   verifyEmail,
+  forgotPassword,
+  resetPassword,
 };

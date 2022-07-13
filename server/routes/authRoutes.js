@@ -6,12 +6,16 @@ const {
   login,
   logout,
   verifyEmail,
+  forgotPassword,
+  resetPassword,
 } = require('../controllers/authController');
 const { authenticateUser } = require('../middleware/authentication');
 
 router.route('/register').post(register);
 router.route('/login').post(login);
-router.get('/logout', logout);
+router.delete('/logout', authenticateUser, logout);
 router.post('/verify-email', verifyEmail);
+router.route('/forgot-password').post(forgotPassword);
+router.route('/reset-password').post(resetPassword);
 
 module.exports = router;
